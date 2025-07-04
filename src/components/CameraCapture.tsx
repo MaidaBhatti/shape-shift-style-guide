@@ -1,5 +1,5 @@
 
-import { useState, useRef, useCallback } from 'react';
+import { useState, useRef, useCallback, useEffect } from 'react';
 import { Camera, RotateCcw, Check, ArrowLeft } from 'lucide-react';
 import { Button } from '@/components/ui/button';
 
@@ -11,12 +11,16 @@ interface CameraCaptureProps {
 const CameraCapture = ({ onCapture, onBack }: CameraCaptureProps) => {
   const [isStreaming, setIsStreaming] = useState(false);
   const [capturedImage, setCapturedImage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const streamRef = useRef<MediaStream | null>(null);
 
   const startCamera = useCallback(async () => {
     try {
+      setError(null);
+      console.log('Starting camera...');
+      
       const stream = await navigator.mediaDevices.getUserMedia({
         video: { 
           facingMode: 'user',
@@ -25,31 +29,40 @@ const CameraCapture = ({ onCapture, onBack }: CameraCaptureProps) => {
         }
       });
       
+      console.log('Camera stream obtained:', stream);
+      
       if (videoRef.current) {
         videoRef.current.srcObject = stream;
         streamRef.current = stream;
         setIsStreaming(true);
+        console.log('Camera started successfully');
       }
     } catch (error) {
       console.error('Error accessing camera:', error);
+      setError('Unable to access camera. Please check permissions.');
     }
   }, []);
 
   const stopCamera = useCallback(() => {
+    console.log('Stopping camera...');
     if (streamRef.current) {
-      streamRef.current.getTracks().forEach(track => track.stop());
+      streamRef.current.getTracks().forEach(track => {
+        track.stop();
+        console.log('Stopped track:', track.kind);
+      });
       streamRef.current = null;
     }
     setIsStreaming(false);
   }, []);
 
   const capturePhoto = useCallback(() => {
+    console.log('Capturing photo...');
     if (videoRef.current && canvasRef.current) {
       const canvas = canvasRef.current;
       const video = videoRef.current;
       const context = canvas.getContext('2d');
       
-      if (context) {
+      if (context && video.videoWidth > 0 && video.videoHeight > 0) {
         canvas.width = video.videoWidth;
         canvas.height = video.videoHeight;
         context.drawImage(video, 0, 0);
@@ -57,20 +70,36 @@ const CameraCapture = ({ onCapture, onBack }: CameraCaptureProps) => {
         const imageData = canvas.toDataURL('image/jpeg', 0.8);
         setCapturedImage(imageData);
         stopCamera();
+        console.log('Photo captured successfully');
+      } else {
+        console.error('Failed to capture photo: invalid video dimensions');
+        setError('Failed to capture photo. Please try again.');
       }
     }
   }, [stopCamera]);
 
   const retakePhoto = useCallback(() => {
+    console.log('Retaking photo...');
     setCapturedImage(null);
+    setError(null);
     startCamera();
   }, [startCamera]);
 
   const confirmPhoto = useCallback(() => {
+    console.log('Confirming photo...');
     if (capturedImage) {
       onCapture(capturedImage);
     }
   }, [capturedImage, onCapture]);
+
+  // Cleanup on unmount
+  useEffect(() => {
+    return () => {
+      if (streamRef.current) {
+        streamRef.current.getTracks().forEach(track => track.stop());
+      }
+    };
+  }, []);
 
   return (
     <div className="space-y-6 animate-fade-in">
@@ -88,6 +117,22 @@ const CameraCapture = ({ onCapture, onBack }: CameraCaptureProps) => {
           Body Scan
         </h2>
       </div>
+
+      {error && (
+        <div className="bg-red-50 border border-red-200 rounded-lg p-4 text-red-800">
+          <p>{error}</p>
+          <Button 
+            onClick={() => {
+              setError(null);
+              startCamera();
+            }}
+            className="mt-2 bg-red-600 hover:bg-red-700 text-white"
+            size="sm"
+          >
+            Try Again
+          </Button>
+        </div>
+      )}
 
       <div className="relative bg-white rounded-2xl shadow-xl overflow-hidden">
         {!isStreaming && !capturedImage && (
